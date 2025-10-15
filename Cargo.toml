@@ -1,0 +1,33 @@
+[package]
+name = "cheb-rs"
+version = "0.1.0"
+authors = ["The cheb-rs contributors"]
+edition = "2024"
+description = "Chebychev polynomials in Rust"
+license = "MIT / Apache-2.0"
+homepage = "https://github.com/betckegroup/cheb-rs"
+repository = "https://github.com/betckegroup/cheb-rs"
+readme = "README.md"
+keywords = ["numerics"]
+categories = ["mathematics", "science"]
+
+[lib]
+name = "cheb"
+
+
+[dependencies]
+
+[dev-dependencies]
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+
+
+[build-dependencies]
+
+[features]
+
+[lints.clippy]
+wildcard_imports = "forbid"
+
