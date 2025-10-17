@@ -100,6 +100,64 @@ where
     output
 }
 
+pub fn cheb2d<T: RlstScalar, ArrayImplPoints, ArrayImplValues>(
+    eval_points: &Array<ArrayImplPoints, 2>,
+    interp_values: &Array<ArrayImplValues, 2>,
+    kind: Kind,
+) -> DynArray<T, 1>
+where
+    ArrayImplPoints: UnsafeRandomAccessByValue<2, Item = T::Real>
+        + UnsafeRandom1DAccessByValue<Item = T::Real>
+        + Shape<2>,
+    ArrayImplValues:
+        UnsafeRandomAccessByValue<2, Item = T> + UnsafeRandom1DAccessByValue<Item = T> + Shape<2>,
+{
+    let n_shape = interp_values.shape();
+    let n_eval = eval_points.shape()[0];
+
+    let mut res = DynArray::<T, 1>::from_shape([n_eval]);
+
+    let nodes_x = get_cheb_points::<T>(kind, n_shape[0]);
+    let nodes_y = get_cheb_points::<T>(kind, n_shape[1]);
+
+    let weights_x = barycentric_weights::<T>(kind, n_shape[0]);
+    let weights_y = barycentric_weights::<T>(kind, n_shape[1]);
+
+    let mut one_elem_res = DynArray::<T, 1>::from_shape([1]);
+    let mut one_elem_point = DynArray::<T::Real, 1>::from_shape([1]);
+
+    let mut one_d_results = DynArray::<T, 1>::from_shape([n_shape[0]]);
+
+    for (point, out_value) in izip!(eval_points.col_iter(), res.iter_mut()) {
+        *one_elem_point.get_mut([0]).unwrap() = point.get_value([1]).unwrap();
+
+        for (interp_row, res) in izip!(interp_values.row_iter(), one_d_results.iter_mut()) {
+            evaluate_1d(
+                &one_elem_point,
+                &nodes_y,
+                &interp_row,
+                &weights_y,
+                &mut one_elem_res,
+            );
+            *res = one_elem_res.get_value([0]).unwrap();
+        }
+
+        *one_elem_point.get_mut([0]).unwrap() = point.get_value([0]).unwrap();
+
+        evaluate_1d(
+            &one_elem_point,
+            &nodes_x,
+            &one_d_results,
+            &weights_x,
+            &mut one_elem_res,
+        );
+
+        *out_value = *one_elem_res.data().first().unwrap();
+    }
+
+    res
+}
+
 #[cfg(test)]
 mod test {
     use itertools::izip;
@@ -107,7 +165,7 @@ mod test {
     use rand_chacha::ChaCha8Rng;
     use rlst::DynArray;
 
-    use crate::{cheb_points::get_cheb_points, types::Kind};
+    use crate::{cheb_points::get_cheb_points, interpolation::cheb2d, types::Kind};
 
     use super::cheb1d;
 
@@ -175,5 +233,44 @@ mod test {
             .unwrap();
 
         assert!(max_error < 1E-8);
+    }
+
+    #[test]
+    fn test_cheb2d_second_kind() {
+        let n_x = 10;
+        let n_y = 15;
+
+        let m = 1000;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+
+        let cheb_points_x = get_cheb_points::<f64>(Kind::Second, n_x);
+        let cheb_points_y = get_cheb_points::<f64>(Kind::Second, n_y);
+
+        let mut interp_values = DynArray::<f64, 2>::from_shape([n_x, n_y]);
+
+        for (index_x, point_x) in cheb_points_x.iter_value().enumerate() {
+            for (index_y, point_y) in cheb_points_y.iter_value().enumerate() {
+                *interp_values.get_mut([index_x, index_y]).unwrap() =
+                    point_x.cos() * point_y.sinh();
+            }
+        }
+
+        let mut eval_points = DynArray::<f64, 2>::from_shape([2, m]);
+
+        eval_points
+            .iter_mut()
+            .for_each(|point| *point = 2.0 * rng.random::<f64>() - 1.0);
+
+        let eval_values = cheb2d(&eval_points, &interp_values, Kind::Second);
+
+        let mut max_error = 0.0;
+
+        for (point, actual) in izip!(eval_points.col_iter(), eval_values.iter_value()) {
+            let exact = point[[0]].cos() * point[[1]].sinh();
+            max_error = f64::max(max_error, (exact - actual).abs() / exact.abs());
+        }
+
+        println!("Error: {max_error}");
     }
 }
